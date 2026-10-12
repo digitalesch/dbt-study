@@ -74,3 +74,81 @@ EOF
 ```
 python -c "import duckdb; print(duckdb.connect('shop.duckdb').sql('show tables').df())"
 ```
+
+- Add some sources, as dbt uses it as references to external outputs (like external tables in Databricks, a pointer to a table managed outside the platform)
+```
+mkdir -p models/staging models/marts
+cat > models/staging/_sources.yml << 'EOF'
+version: 2
+
+sources:
+  - name: raw
+    schema: main
+    tables:
+      - name: raw_customers
+      - name: raw_orders
+EOF
+```
+
+Staging here has a purpose of distinguishing what a source system provided, and all the transformations made inside DBT, so it has the start point
+
+- Create the staging model, it's similar to the silver layer in medallion architecture
+```
+cat > models/staging/stg_customers.sql << 'EOF'
+select
+    id as customer_id,
+    first_name,
+    last_name,
+    lower(email) as email,
+    cast(created_at as date) as created_at
+from {{ source('raw', 'raw_customers') }}
+EOF
+
+cat > models/staging/stg_orders.sql << 'EOF'
+select
+    id as order_id,
+    customer_id,
+    status,
+    amount_cents / 100.0 as amount,
+    cast(ordered_at as timestamp) as ordered_at
+from {{ source('raw', 'raw_orders') }}
+EOF
+```
+
+Next come ***marts***, which are the analytics layers, where business logic live, using the staging data to be able to define metrics, dimensions and facts.
+
+All references in DBT are made through the models, in this sense, its the ***{{ ref }}*** macro in Jinja templates, so it constructs the DAG based on the references (wheter materialized or not) on top of them.
+
+Materialization configs constructs what will be physically stored or not, for instance, views / stagings will have no storage and marts as tables will, so it can be consumed in BI tooling for example.
+
+- Creating the dims and facts
+```
+cat > models/marts/dim_customers.sql << 'EOF'
+select
+    customer_id,
+    first_name || ' ' || last_name as full_name,
+    email,
+    created_at
+from {{ ref('stg_customers') }}
+EOF
+
+cat > models/marts/fct_customer_orders.sql << 'EOF'
+with orders as (
+    select * from {{ ref('stg_orders') }}
+),
+
+customers as (
+    select * from {{ ref('dim_customers') }}
+)
+
+select
+    c.customer_id,
+    c.full_name,
+    count(o.order_id) as total_orders,
+    sum(case when o.status = 'completed' then o.amount else 0 end) as completed_revenue,
+    min(o.ordered_at) as first_order_at
+from customers c
+left join orders o using (customer_id)
+group by 1, 2
+EOF
+```
