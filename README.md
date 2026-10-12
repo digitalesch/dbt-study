@@ -165,3 +165,69 @@ The steps can be seen against the
 /target
 ```
 folder, where DBT produces the output files
+
+You can generate / preview docs with
+```
+dbt docs generate --profiles-dir .
+dbt docs serve --profiles-dir .
+```
+
+and will serve it at
+```
+http://localhost:8080
+```
+
+with a lot of the metadata beeing provided from the DAG, models, column descriptions and so on
+
+![DBT Docs](docs/dbt_docs_0001.png)
+
+From the chat history with [Claude](https://claude.ai/share/837babdf-58ba-48b5-a459-d67e1996a4bf)
+
+Will answer the following
+
+Checkpoints
+1. What is the difference between source() and ref(), and what does each give you in the lineage graph?
+- source() is about external to the DBT, what a system produces externally, ref() is used when already inside the DBT env / definitions. First will be the entry point in the DAG definition, the starting point for everything downwards, ref will construct on top of that, so the dependencies between the inputs get downstream
+2. What did dbt add in target/run/...dim_customers.sql that you didn’t write?
+- It compiles the Jinja templates to be able to generate the references from the sources and macros we defined in the code. For instance ***{{ ref }}*** will be transformed into the inputs (could be a sorce() from the external tables) and will define the DDL accordingly, example from our code, the seeds are source from CSV files, and the staging models define ***{{ source(raw_customers) }}, that will be transformed into "dbt_study.main.raw_customers" from the duckdb compute "main" schema
+3. Why are staging models views and marts tables? When would you change that?
+- Staging models would define my intermediate layer, as to clean up the data and get a sense from the sources into my "internal" naming pattern and governance nomenclature, let's say we have "id" column from customer data, and that would be defined as "customer_id" to maitain consistency downwards on the models.
+- Marts define logic that the business requires and sees as applied to be metrified, that is, whatever the inputs (after clean up) can be considered relevant metrics / dimensions / facts for the business to aggregate on
+4. If you rename stg_orders but not fct_customer_orders, what happens, and at what stage does dbt catch it?
+- DBT has ***dbt test*** and ***dbt run** to check consistency accross the whole project, let's say in this case, my reference is gone, ***dbt test*** would catch it by determining a corrupt reference in ***fct_customer_orders***, and wouldn't be able to compile it, ***dbt run*** on the other hand would also do checks, but it would run against the compute, computing the steps before the error occurred
+5. What does dbt run do beyond dbt compile?
+- It computes the transformations (or models named in DBT) against the compute being run (in my example, duckdb). It also materializes the defined tables / view that are going to be needed as references for posterior steps and will consolidate the whole project.
+
+Corrections on Claude Side
+Q1: Correct
+Q2: Mostly correct, having:
+```
+A small correction on my side: DuckDB names the database after the file (path: shop.duckdb), so the compiled reference is "shop"."main"."raw_customers", not dbt_study.main.... I wrote shop earlier for the same reason.
+```
+Q3: Mostly correct, having:
+```
+The reasoning here is about cost and freshness:
+
+View: no storage, always fresh, but the query reruns every time someone reads it. That’s fine for a cheap rename and cast.
+Table: computed once at build time, so reads are fast. The trade-off is that it’s stale until the next run, and you pay for storage and build compute.
+
+When to change it:
+
+A staging view gets slow, or many models stack on it: make it a table or incremental.
+A mart is small and must always be fresh: make it a view.
+A mart is huge: make it incremental.
+```
+Q4: incorrect
+```
+A broken ref() is caught at parse time, before anything touches the database. Any command that loads the project (run, build, compile, even dbt ls) fails immediately with a compilation error along the lines of “Model fct_customer_orders depends on a node named stg_orders which was not found.” Nothing runs, so nothing is partially built.
+```
+
+Tried it with
+```
+mv models/staging/stg_orders.sql models/staging/stg_orders_renamed.sql
+dbt compile --profiles-dir .
+```
+
+![DBT Compile error](docs/dbt_compile_error_0001.png)
+
+Q5: correct
