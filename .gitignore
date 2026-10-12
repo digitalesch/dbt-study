@@ -6,3 +6,4 @@ logs/
 *.duckdb.wal
 profiles.yml
 *.log
+.user.yml
