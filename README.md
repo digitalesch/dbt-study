@@ -52,7 +52,7 @@ id,first_name,last_name,email,created_at
 EOF
 ```
 
-- Loaded up with 
+- Loaded up CSV data with
 ```
 dbt seed --profiles-dir .
 ```
@@ -65,14 +65,14 @@ dbt_study:
   outputs:
     dev:
       type: duckdb
-      path: shop.duckdb
+      path: dbt_study.duckdb
       threads: 4
 EOF
 ```
 
 - Check that the duckdb landed csv
 ```
-python -c "import duckdb; print(duckdb.connect('shop.duckdb').sql('show tables').df())"
+python -c "import duckdb; print(duckdb.connect('dbt_study.duckdb').sql('show tables').df())"
 ```
 
 - Add some sources, as dbt uses it as references to external outputs (like external tables in Databricks, a pointer to a table managed outside the platform)
@@ -152,3 +152,16 @@ left join orders o using (customer_id)
 group by 1, 2
 EOF
 ```
+
+In ***dbt_study.yml*** the materialization for each step is determined, a ***+*** will define a standard for each folder.
+
+```
+dbt run
+```
+
+this will do 5 things, parse the project, construct the DAG, compile the Jinja templating to SQL, wrap models into DDLs according to the materialization and execute against the compute.
+The steps can be seen against the
+```
+/target
+```
+folder, where DBT produces the output files
