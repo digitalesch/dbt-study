@@ -164,7 +164,7 @@ http://localhost:8080
 
 with a lot of the metadata beeing provided from the DAG, models, column descriptions and so on
 
-![DBT Docs](docs/dbt_docs_0001.png)
+![DBT Docs](0001_dbt_docs_0001.png)
 
 From the chat history with [Claude](https://claude.ai/share/837babdf-58ba-48b5-a459-d67e1996a4bf)
 
@@ -213,6 +213,6 @@ mv models/staging/stg_orders.sql models/staging/stg_orders_renamed.sql
 dbt compile --profiles-dir .
 ```
 
-![DBT Compile error](docs/dbt_compile_error_0001.png)
+![DBT Compile error](0002_dbt_compile_error_0001.png)
 
 Q5: correct
