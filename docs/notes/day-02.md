@@ -171,3 +171,59 @@ dbt build --profiles-dir .
 Erroring out to
 
 ![Faulty data test](0004_error_test_faulty_data.png)
+
+### Checkpoints
+1. What does is_incremental() return on the first run, and why does that matter?
+- Since it's the first run, it returns nothing, and the query resembles a "select * referenceTable" when compiled, so it behaves like a full load
+2. Why did we filter on updated_at rather than ordered_at?
+- The updates can be made on different columns rather then just the creation of the order, like order status, amounts, quantities and other aspects, that ***ordered_at*** wouldn't be able to catch
+3. What is unique_key for? What would have happened to order 106 without it (using append)?
+- It would duplicate the key order 106 with whatever update it produced, so it'd have the history of orders, not just the latest snapshot of it
+4. When would you run --full-refresh, and why is it risky on a big table?
+- When some data drifts are observed, like missing some sort of data, or late arriving data that should be available at some point and the trade-off is that for huge tables, that would be quite expensive to recompute all
+5. What’s the difference between dbt test and dbt build? What happened to fct_orders when accepted_values failed?
+- Build gets the structure and references in place but don't use real compute for it, just gets the compilation working. Test on the other hand, will execute queries against the tables and see the errors for the defined tests in place, so it actually runs (and costs if the compute is on the cloud) for the tests to be able to perform
+6. Where is the state stored that tells dbt what “new” means?
+If I'm not mistaken is on the metadata from the run (run_results.json) for example, to check whatever is different from previous runs, but not sure
+
+Claude corrected with
+
+- Q1: is_incremental() on the first run (mostly right)
+
+Your behavior description is right: the filter disappears and the model acts like a full load. One precision fix: is_incremental() returns False, not “nothing”. It’s a boolean, so the {% if %} block is skipped. It’s also False when you run with --full-refresh, or when the model isn’t materialized as incremental.
+
+- Q2: updated_at vs ordered_at (correct)
+
+ordered_at is set once at creation, so it can never reveal that an existing order changed. One caveat worth adding in an interview: this only works if the source reliably bumps updated_at on every change. If it doesn’t, you need a different strategy, such as a lookback window or a full refresh.
+
+- Q3: unique_key and append (mostly right)
+
+Right instinct, but the framing needs care. With append, order 106 would exist twice, as pending and as completed. That isn’t “history”, it’s duplication, and it breaks things:
+
+The unique test on order_id fails.
+Revenue aggregations double count.
+Nobody can tell which row is current.
+
+If you want proper history of changes, that’s what snapshots are for (Day 3). Also note that append ignores unique_key entirely. unique_key is what tells merge or delete+insert which existing rows to replace.
+
+- Q4: --full-refresh (mostly right)
+
+Correct on cost. Two adjustments:
+
+Late-arriving data is usually better handled by a lookback window than by a full refresh, because a full refresh is the expensive hammer.
+The classic triggers are logic changes (old rows keep the old logic until rebuilt), schema changes, and source backfills.
+Q5: dbt build vs dbt test (incorrect, the key fix)
+
+You described it the wrong way round. dbt build does real work. Only dbt compile skips execution.
+
+Command	What it does
+dbt compile	Renders the SQL only, no database execution
+dbt run	Builds models (executes DDL and transformations)
+dbt test	Runs test queries against objects that already exist
+dbt build	Seeds, snapshots, models, and tests, in DAG order
+
+The important difference is that build interleaves tests with models, so a failed test blocks downstream models. With dbt run followed by dbt test, bad data is already in your marts by the time the test tells you.
+
+- Q6: where the state lives (incorrect, but a good near-miss)
+
+The state for incremental models is the target table itself. dbt has no checkpoint or metadata store for it. The query select max(updated_at) from {{ this }} asks the table “what’s the latest thing you hold?” and that is the whole mechanism.
