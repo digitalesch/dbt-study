@@ -16,3 +16,4 @@ Try running the following commands:
 
 ### Notes
 - [Notes for day 01](docs/notes/day-01.md)
+- [Notes for day 02](docs/notes/day-02.md)
