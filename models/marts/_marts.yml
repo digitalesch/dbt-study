@@ -7,3 +7,14 @@ models:
         data_tests:
           - unique
           - not_null
+      - name: amount
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+
+  - name: dim_customers
+    columns:
+      - name: customer_key
+        data_tests:
+          - unique
+          - not_null

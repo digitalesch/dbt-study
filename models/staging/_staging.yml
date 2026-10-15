@@ -23,4 +23,4 @@ models:
       - name: status
         data_tests:
           - accepted_values:
-              values: ['completed', 'returned', 'pending']
+              values: ['completed', 'returned', 'pending', 'refunded']
