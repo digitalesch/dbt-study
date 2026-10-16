@@ -288,3 +288,19 @@ jobs:
       - run: dbt build --profiles-dir ci          # models + tests in DAG order
 EOF
 ```
+
+Checkpoints
+1. What do +model, model+, 1+model, a space, and a comma do in a selector?
+- It changes the selector and what it means that to check +model (the current model and ancestors), model+ (current + successors), 1+model (upstream directly 1 level above ancestor), a space (gets the union of the models), comma (the union)
+2. What does state:modified+ compare against, and how is that state different from incremental-model state (Day 2 Q6)?
+- It compares against the manifest, the incremental-model changes the the data in the table, not manifest as far as I understood it
+3. What does --defer do to a ref() that isn’t selected? Why does this save cost?
+- It will build only what's changed in the code, so it doesn't recompute all of the models again, saving compute costs on computing for instance, a mart that changed a filter, it doesn't need to recompute all of the upstream dependencies
+4. Why must dev, CI, and prod build into different schemas? What breaks if CI writes to prod?
+- Its mainly differentiating the workspaces, dev should always write on dev schema, prod on its own and so on. Let's say you didn't do that and ran your test against the actual models, it would overwrite a "prod" table, even though it was just a test
+5. Contract vs test: when does each run, and what does each protect?
+- Tests will run against the computed values, the data itself or the values contained in the tables. Data contracts will run in the build process, as to catch errors in the overall structure (schemas, mostly column types and names) of the models. If it can't build at all, somethings off and that can't be let to go to prod. Those are different aspects of the tables, one measuring the contents, other the structure
+6. What does source freshness measure, and why isn’t unique or not_null a substitute?
+- It gets how the sources are updated, not that the constraints (unique, not_null) are valid. Example a table can pass those constraints and still have out of date data, as is in our case, data from 2024 has  freshness problems, but the constraints against it are valid, giving valid checks on tests, but not having current data.
+7. If you migrated fct_orders to Databricks, which configs would you change? How would you map dev, CI, and prod to Unity Catalog?
+- We could update the ***profiles.yml*** file and add to the databricks profile the hostname, user_id and other configs to be able to access the Catalog somehow, for it to be hosted there, so the models could be identified through options like file_format being delta, liquid_clustering configs and tblproperties.
