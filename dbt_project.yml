@@ -33,5 +33,7 @@ models:
   dbt_study:
     staging:
       +materialized: view
+      +tags: ['staging']
     marts:
       +materialized: table
+      +tags: ['marts']

@@ -13,8 +13,18 @@ models:
               min_value: 0
 
   - name: dim_customers
+    config:
+      contract:
+        enforced: true
     columns:
       - name: customer_key
-        data_tests:
-          - unique
-          - not_null
+        data_type: varchar
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_type: integer
+      - name: full_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: created_at
+        data_type: date

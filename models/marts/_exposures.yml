@@ -1,0 +1,12 @@
+version: 2
+
+exposures:
+  - name: customer_revenue_dashboard
+    type: dashboard
+    maturity: medium
+    owner:
+      name: Analytics Team
+      email: analytics@example.com
+    depends_on:
+      - ref('fct_customer_orders')
+      - ref('dim_customers')

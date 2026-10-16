@@ -1,0 +1,7 @@
+dbt_study:
+  target: ci
+  outputs:
+    ci:
+      type: duckdb
+      path: ci.duckdb
+      threads: 4
