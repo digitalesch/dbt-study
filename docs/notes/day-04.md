@@ -304,3 +304,76 @@ Checkpoints
 - It gets how the sources are updated, not that the constraints (unique, not_null) are valid. Example a table can pass those constraints and still have out of date data, as is in our case, data from 2024 has  freshness problems, but the constraints against it are valid, giving valid checks on tests, but not having current data.
 7. If you migrated fct_orders to Databricks, which configs would you change? How would you map dev, CI, and prod to Unity Catalog?
 - We could update the ***profiles.yml*** file and add to the databricks profile the hostname, user_id and other configs to be able to access the Catalog somehow, for it to be hosted there, so the models could be identified through options like file_format being delta, liquid_clustering configs and tblproperties.
+
+### Claude corrections:
+1. Q1: selectors (one error)
+
+Five of the six pieces are right:
+
++model is the model and its ancestors.
+model+ is the model and its descendants.
+1+model is the model and its direct parents only, one level up.
+A space is a union, which you got right.
+A comma is an intersection, not a union. You wrote it as a union.
+
+Remember it as space = OR, comma = AND. Check it with dbt ls:
+
+bash
+dbt ls --select "tag:staging fct_orders" --profiles-dir .    # all staging models, plus fct_orders
+dbt ls --select "tag:staging,fct_orders" --profiles-dir .    # nothing: no model is both
+
+Interviewers like asking this one, because mixing up union and intersection means a CI job selects the wrong set of models.
+
+### Q2: state:modified+ (correct)
+
+It compares your branch against a saved manifest, which is what a prior production run recorded. Incremental state is the max watermark in the target table. They are unrelated. To be precise, the comparison is on file checksums and configs, not on data, which is why a comment change counts as modified. You were going to test that in the stretch section.
+
+### Q3: --defer (mixes up two mechanisms)
+
+You described what state:modified+ does, which is choosing what to build. --defer does something different and complementary:
+
+--select state:modified+ decides what gets built.
+--defer --state <dir> decides where ref() points for the models that are not built.
+
+Say CI rebuilds only fct_customer_orders. It still has to read dim_customers and stg_orders, but those weren’t rebuilt, so they don’t exist in your CI schema. Without defer, the build fails on missing tables, or you’re forced to build all ancestors with +. With defer, dbt points those refs at the production tables recorded in the manifest. That is the saving: you test your change against real prod data without recomputing anything upstream.
+
+Your example (a mart that changed a filter doesn’t need its upstream recomputed) is the right outcome. The mechanism is defer.
+
+Defer needs those prod objects to exist and be reasonably current.
+
+### Q4: separate schemas (correct, add more reasons)
+
+Overwriting a prod table is the main risk. Other reasons, which come up in interviews:
+
+Consumers read prod. Dashboards would show half-built or test data during CI.
+Concurrency. Two developers or two PRs writing to the same schema overwrite each other, so use per-developer (dbt_alice) and per-PR (pr_123) schemas.
+Permissions. The CI service principal shouldn’t have write access to prod at all, so a bug can’t touch it.
+Cleanup. Per-PR schemas must be dropped on PR close, or they accumulate.
+### Q5: contract vs test (correct)
+
+Add the ordering detail: a contract is checked at build time, before the table is replaced, so a violation leaves the existing table untouched. Tests run after the table is built. With dbt build, a failed test then blocks downstream models. Contracts guard the shape, and tests guard the content.
+
+### Q6: freshness (correct)
+
+Your example is the right one: the table passes every constraint and is still stale. Two additions:
+
+The loaded_at_field should be a load or ingestion time, not a business timestamp. Our updated_at is a business timestamp, so freshness here is only a stand-in. In a real project you’d use something like _ingested_at or _fivetran_synced.
+Freshness is a separate command (dbt source freshness), not part of dbt build. You run it first so you can skip the build when the source is stale.
+### Q7: migrating to Databricks (half answered)
+
+You covered the model configs (delta, liquid clustering, tblproperties), but not the environment mapping the question asked for, and a few details need correcting.
+
+Profile: the Databricks adapter doesn’t have a user_id field. You need host, http_path (the SQL warehouse), catalog, schema, and an auth method. Dev uses a personal token. Prod uses a service principal (OAuth M2M), so no jobs run as a person. Credentials come from env_var(), never from Git.
+
+Model configs to change:
+
+incremental_strategy: delete+insert → merge, which generates a real Delta MERGE INTO.
+file_format='delta', plus liquid_clustered_by instead of partitioning (unless the table is huge and date-bound, which favors insert_overwrite).
+tblproperties for table settings, and persist_docs to push YAML descriptions into Unity Catalog comments.
+
+Mapping environments to Unity Catalog:
+
+Environment	Catalog	Schema	Identity
+dev	dev_catalog	dbt_<user>	personal token
+CI	dev_catalog or ci_catalog	pr_<number>, dropped on close	CI service principal
+prod	prod_catalog	analytics	prod service principal
